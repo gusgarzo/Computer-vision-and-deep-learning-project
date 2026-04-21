@@ -1,0 +1,396 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+
+% Custom colours
+\definecolor{ntnu}{RGB}{0, 80, 158}
+\definecolor{lightgray}{RGB}{240, 240, 240}
+\definecolor{darkgreen}{RGB}{0, 130, 0}
+
+\setbeamercolor{frametitle}{bg=ntnu, fg=white}
+\setbeamercolor{title}{bg=ntnu, fg=white}
+\setbeamercolor{block title}{bg=ntnu, fg=white}
+\setbeamercolor{structure}{fg=ntnu}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{lightgray},
+  frame=single,
+  breaklines=true,
+  keywordstyle=\color{ntnu}\bfseries,
+  commentstyle=\color{gray},
+  language=Python
+}
+
+% Title info
+\title{TDT4265 Mini-Project}
+\subtitle{Snow Pole Detection for Autonomous Driving}
+\author{Gustav}
+\institute{NTNU -- Computer Vision and Deep Learning}
+\date{April 2026}
+
+% -------------------------------------------------------
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+  \tableofcontents
+\end{frame}
+
+% =======================================================
+\section{Methods \& Models}
+% =======================================================
+
+\begin{frame}{Overview -- Two Architectures}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Model 1 -- YOLOv8s}
+        \begin{itemize}
+          \item Single-stage detector
+          \item You Only Look Once -- one forward pass
+          \item Designed for real-time edge deployment
+          \item \textbf{Dataset:} Road poles iPhone\\(942 train / 261 val)
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Model 2 -- Faster R-CNN}
+        \begin{itemize}
+          \item Two-stage detector
+          \item Region Proposal Network + classification
+          \item ResNet-50 + FPN backbone
+          \item \textbf{Dataset:} roadpoles v1\\(322 train / 92 val)
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+  \vspace{0.5em}
+  \centering
+  \textit{Both models fine-tuned from ImageNet/COCO pretrained weights}
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}{Model 1 -- YOLOv8s Architecture}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Why YOLOv8s?}
+      \begin{itemize}
+        \item Poles occupy $\approx$2\% of image width -- need enough model capacity
+        \item YOLOv8\textbf{n} (nano) too weak for small objects
+        \item YOLOv8\textbf{s} (small, 11.2M params) -- best speed/accuracy tradeoff
+        \item Must run on edge device in real-time
+      \end{itemize}
+      \vspace{0.5em}
+      \textbf{Key training decisions:}
+      \begin{itemize}
+        \item \texttt{imgsz=1280} -- more pixels per pole
+        \item 150 epochs with early stopping (patience=30)
+        \item Mosaic, scale, colour jitter augmentations
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{block}{Model stats}
+        \begin{itemize}
+          \item Parameters: 11.2M
+          \item Input size: $1280\times1280$
+          \item Classes: 1 (pole)
+          \item Pretrained: COCO
+          \item Batch size: 8
+          \item Optimiser: auto (AdamW)
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}[fragile]{Model 1 -- YOLOv8s Training Config}
+  \begin{block}{Training code}
+\begin{lstlisting}[language=Python]
+model = YOLO("yolov8s.pt")
+model.train(
+    data="data.yaml",
+    epochs=150,
+    imgsz=1280,
+    batch=8,
+    patience=30,
+    hsv_h=0.015, hsv_s=0.7, hsv_v=0.4,
+    fliplr=0.5, mosaic=1.0, scale=0.5,
+    translate=0.1,
+    device=0
+)
+\end{lstlisting}
+  \end{block}
+  \begin{itemize}
+    \item Batch size reduced to 8 due to \texttt{imgsz=1280} VRAM requirements
+    \item Fine-tuned from COCO pretrained weights
+    \item Trained on NVIDIA RTX 4090 (Cybele lab)
+  \end{itemize}
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}{Model 2 -- Faster R-CNN Architecture}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Two-stage detection pipeline:}
+      \begin{enumerate}
+        \item \textbf{Stage 1 -- RPN:} Scans feature map, proposes candidate regions containing objects
+        \item \textbf{Stage 2 -- ROI Head:} Classifies each proposal and refines the bounding box
+      \end{enumerate}
+      \vspace{0.5em}
+      \textbf{FPN backbone:} Extracts features at multiple scales simultaneously -- important for poles at different distances
+      \vspace{0.5em}
+      \textbf{Key difference from YOLO:} Two passes = slower but theoretically more accurate on small objects
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{block}{Architecture}
+        \begin{itemize}
+          \item Backbone: ResNet-50 + FPN
+          \item Pretrained: COCO
+          \item Head: replaced for 2 classes (background + pole)
+          \item Optimiser: SGD, lr=0.005
+          \item Scheduler: StepLR
+          \item Epochs: 100
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}[fragile]{Model 2 -- Faster R-CNN Training Config}
+  \begin{block}{Custom dataset class -- YOLO labels to Faster R-CNN format}
+\begin{lstlisting}[language=Python]
+# Convert normalised YOLO format to absolute pixel coords
+x1 = (cx - bw/2) * W
+y1 = (cy - bh/2) * H
+x2 = (cx + bw/2) * W
+y2 = (cy + bh/2) * H
+# Labels: 0 = background, 1 = pole
+\end{lstlisting}
+  \end{block}
+  \begin{block}{Augmentations (train only)}
+\begin{lstlisting}[language=Python]
+train_transform = T.Compose([
+    T.ToTensor(),
+    T.ColorJitter(brightness=0.4, contrast=0.4,
+                  saturation=0.3, hue=0.1),
+    T.RandomHorizontalFlip(p=0.5),
+])
+\end{lstlisting}
+  \end{block}
+\end{frame}
+
+% =======================================================
+\section{Results}
+% =======================================================
+
+\begin{frame}{Results -- Validation Set Metrics}
+  \begin{table}
+    \centering
+    \renewcommand{\arraystretch}{1.4}
+    \begin{tabular}{lcccc}
+      \toprule
+      \textbf{Model} & \textbf{Precision} & \textbf{Recall} & \textbf{mAP@50} & \textbf{mAP@0.5:0.95} \\
+      \midrule
+      YOLOv8s        & 0.957 & 0.976 & \textbf{0.990} & \textbf{0.788} \\
+      Faster R-CNN   & 0.626 & 0.679 & 0.993 & 0.626 \\
+      \bottomrule
+    \end{tabular}
+    \caption{Validation set results on respective datasets}
+  \end{table}
+  \vspace{0.5em}
+  \begin{itemize}
+    \item Both models achieve \textbf{mAP@50 $>$ 0.99} -- poles are reliably detected
+    \item YOLO significantly better on \textbf{mAP@0.5:0.95} (0.788 vs 0.626)
+    \item Faster R-CNN higher Precision but lower Recall
+  \end{itemize}
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}{Results -- Leaderboard}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Road poles iPhone leaderboard}
+        \begin{itemize}
+          \item Submitted YOLOv8s predictions
+          \item Score: \textbf{$\approx$69\%}
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{roadpoles v1 leaderboard}
+        \begin{itemize}
+          \item Submitted Faster R-CNN predictions
+          \item Score: \textbf{$\approx$66\%}
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+  \vspace{1em}
+  \textbf{Note:} Test set scores lower than validation -- expected due to unseen weather/lighting conditions in test set
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}{Results -- mAP@50 vs mAP@0.5:0.95 Gap}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      The gap between the two metrics tells us how \textbf{precisely the boxes fit} the poles:
+      \vspace{0.5em}
+      \begin{itemize}
+        \item \textbf{mAP@50:} Box needs to overlap ground truth by $\geq$50\% -- both models pass easily
+        \item \textbf{mAP@0.5:0.95:} Averaged over IoU thresholds 0.50 to 0.95 -- requires tight localisation
+      \end{itemize}
+      \vspace{0.5em}
+      YOLO produces \textbf{tighter bounding boxes} -- likely due to larger training set and higher image resolution
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{table}
+        \renewcommand{\arraystretch}{1.4}
+        \begin{tabular}{lcc}
+          \toprule
+          & \textbf{@50} & \textbf{@0.5:0.95} \\
+          \midrule
+          YOLOv8s      & 0.990 & 0.788 \\
+          Faster R-CNN & 0.993 & 0.626 \\
+          \bottomrule
+        \end{tabular}
+      \end{table}
+      \vspace{0.5em}
+      \textcolor{darkgreen}{Gap for YOLO: 0.202}\\
+      \textcolor{red}{Gap for RCNN: 0.367}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================
+\section{Discussion}
+% =======================================================
+
+\begin{frame}{Discussion -- Why YOLO Outperformed Faster R-CNN}
+  \begin{block}{Three key factors}
+    \begin{enumerate}
+      \item \textbf{Dataset size:} YOLO trained on 942 images vs 322 for Faster R-CNN. More data = better generalisation, especially for small objects.
+      \item \textbf{Image resolution:} YOLO used \texttt{imgsz=1280} vs default 800 for Faster R-CNN. More pixels per pole directly improves detection.
+      \item \textbf{Augmentation:} YOLO used mosaic augmentation which creates composite training images -- effectively increases dataset diversity.
+    \end{enumerate}
+  \end{block}
+  \vspace{0.3em}
+  \textit{Faster R-CNN is theoretically stronger on small objects due to FPN + two-stage design, but needs more data and tuning to demonstrate this advantage.}
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}{Discussion -- Limitations \& Future Work}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Current limitations:}
+      \begin{itemize}
+        \item Faster R-CNN trained on smaller dataset -- unfair comparison
+        \item Test set gap suggests domain shift (weather, lighting)
+        \item Faster R-CNN too slow for real-time edge deployment as-is
+        \item No pseudo-labelling of unlabelled RoadPoles-MSJ data
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Future improvements:}
+      \begin{itemize}
+        \item Increase Faster R-CNN \texttt{imgsz} to 1024/1280
+        \item Pseudo-label RoadPoles-MSJ with best YOLO model
+        \item Try MobileNet backbone for faster inference
+        \item Test time augmentation (TTA) for better test scores
+        \item Ensemble YOLO + Faster R-CNN predictions
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================
+\section{Key Learning Points}
+% =======================================================
+
+\begin{frame}{Key Learning Points}
+  \begin{block}{1 -- Resolution matters more than model size}
+    Increasing \texttt{imgsz} from 640 to 1280 had a larger impact than switching from YOLOv8n to YOLOv8s. For tiny objects like snow poles, giving the model more pixels to work with is the single most effective improvement.
+  \end{block}
+  \begin{block}{2 -- Understanding two-stage detection}
+    Implementing Faster R-CNN manually revealed how the RPN and ROI pooling work together -- a much deeper understanding than using YOLO through a high-level API. The label format conversion (YOLO normalised to absolute pixel coordinates) highlighted how different frameworks expect data.
+  \end{block}
+  \begin{block}{3 -- Applied deep learning is mostly engineering}
+    A significant portion of the project was path issues, yaml configuration, CUDA driver mismatches, and dataset format debugging. These are the real-world challenges in any CV deployment scenario.
+  \end{block}
+\end{frame}
+
+% =======================================================
+\section{Sustainability}
+% =======================================================
+
+\begin{frame}{Sustainability -- Compute Energy}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Hardware used:}
+      \begin{itemize}
+        \item NVIDIA RTX 4090 (Cybele lab)
+        \item TDP: 450W
+      \end{itemize}
+      \vspace{0.5em}
+      \textbf{Approximate training time:}
+      \begin{itemize}
+        \item YOLOv8s (150 epochs, imgsz=1280): $\approx$2.5h
+        \item Faster R-CNN (100 epochs): $\approx$1.5h
+        \item Total: $\approx$\textbf{4 hours}
+      \end{itemize}
+      \vspace{0.5em}
+      \textbf{Energy consumed:}
+      \[E = 0.45\,\text{kW} \times 4\,\text{h} = \mathbf{1.8\,\text{kWh}}\]
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{block}{How long could we code?}
+        \vspace{0.3em}
+        MacBook Pro M3 consumption:\\
+        \textbf{$\approx$45 W under load}
+        \vspace{0.5em}
+        \[t = \frac{1800\,\text{Wh}}{45\,\text{W}} = \mathbf{40\,\text{hours}}\]
+        \vspace{0.3em}
+        \centering
+        $\approx$ a full work week of laptop use
+        \vspace{0.3em}
+        \textit{Relatively low footprint -- fine-tuning from pretrained weights avoided training from scratch}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -------------------------------------------------------
+\begin{frame}{Summary}
+  \begin{table}
+    \centering
+    \renewcommand{\arraystretch}{1.4}
+    \begin{tabular}{lcccc}
+      \toprule
+      \textbf{Model} & \textbf{mAP@50} & \textbf{mAP@0.5:0.95} & \textbf{Speed} & \textbf{Edge-ready} \\
+      \midrule
+      YOLOv8s      & 0.990 & 0.788 & Fast  & \textcolor{darkgreen}{\textbf{Yes}} \\
+      Faster R-CNN & 0.993 & 0.626 & Slow  & \textcolor{red}{\textbf{No}}  \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{1em}
+  \begin{itemize}
+    \item \textbf{Best model for deployment:} YOLOv8s -- higher mAP@0.5:0.95, real-time capable
+    \item \textbf{Biggest improvement lever:} image resolution for small object detection
+    \item \textbf{Energy cost:} 1.8 kWh total $\approx$ 12 km in a Tesla Model Y
+  \end{itemize}
+  \vspace{0.5em}
+  \centering
+  \textit{Thank you!}
+\end{frame}
+
+\end{document}
