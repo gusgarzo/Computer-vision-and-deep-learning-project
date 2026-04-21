@@ -250,12 +250,12 @@
 \begin{frame}{Overview -- Two Architectures}
   \begin{columns}
     \begin{column}{0.48\textwidth}
-      \begin{block}{Model 1 -- YOLOv8s}
+      \begin{block}{Model 1 -- YOLOv8n Baseline}
         \begin{itemize}
           \item Single-stage detector
           \item You Only Look Once -- one forward pass
-          \item Designed for real-time edge deployment
-          \item \textbf{Dataset:} Road poles iPhone\\(942 train / 261 val)
+          \item Lightweight baseline for fast iteration
+          \item Separate notebooks prepared for both datasets
         \end{itemize}
       \end{block}
     \end{column}
@@ -264,45 +264,46 @@
         \begin{itemize}
           \item Two-stage detector
           \item Region Proposal Network + classification
-          \item ResNet-50 + FPN backbone
-          \item \textbf{Dataset:} roadpoles v1\\(322 train / 92 val)
+          \item Torchvision pretrained backbones + FPN
+          \item Strongest validated results on both datasets
         \end{itemize}
       \end{block}
     \end{column}
   \end{columns}
   \vspace{0.5em}
   \centering
-  \textit{Both models fine-tuned from ImageNet/COCO pretrained weights}
+  \textit{Both model families were used on both leaderboards: \texttt{Road\_poles\_iPhone} and \texttt{roadpoles\_v1}}
 \end{frame}
 
 % -------------------------------------------------------
-\begin{frame}{Model 1 -- YOLOv8s Architecture}
+\begin{frame}[shrink=2]{Model 1 -- YOLO Baseline Architecture}
   \begin{columns}
     \begin{column}{0.55\textwidth}
-      \textbf{Why YOLOv8s?}
+      \textbf{Why YOLO as a baseline?}
       \begin{itemize}
-        \item Poles occupy $\approx$2\% of image width -- need enough model capacity
-        \item YOLOv8\textbf{n} (nano) too weak for small objects
-        \item YOLOv8\textbf{s} (small, 11.2M params) -- best speed/accuracy tradeoff
-        \item Must run on edge device in real-time
+        \item Single-stage detector with very fast training and inference
+        \item Good baseline for checking whether the task can be solved with a lightweight model
+        \item Easy to train and export with the Ultralytics workflow
+        \item Relevant to the deployment goal because it is edge-friendly
       \end{itemize}
       \vspace{0.5em}
-      \textbf{Key training decisions:}
+      \textbf{Notebook setup used in the repo:}
       \begin{itemize}
-        \item \texttt{imgsz=1280} -- more pixels per pole
-        \item 150 epochs with early stopping (patience=30)
-        \item Mosaic, scale, colour jitter augmentations
+        \item \texttt{yolov8n.pt} pretrained checkpoint
+        \item 100 epochs
+        \item \texttt{imgsz=640}
+        \item Separate notebooks prepared for each dataset
       \end{itemize}
     \end{column}
     \begin{column}{0.42\textwidth}
       \begin{block}{Model stats}
         \begin{itemize}
-          \item Parameters: 11.2M
-          \item Input size: $1280\times1280$
+          \item Variant: YOLOv8n
+          \item Input size: $640\times640$
           \item Classes: 1 (pole)
           \item Pretrained: COCO
-          \item Batch size: 8
-          \item Optimiser: auto (AdamW)
+          \item Device: CUDA in notebook config
+          \item Role in project: baseline detector
         \end{itemize}
       \end{block}
     \end{column}
@@ -310,27 +311,22 @@
 \end{frame}
 
 % -------------------------------------------------------
-\begin{frame}[fragile,shrink=5]{Model 1 -- YOLOv8s Training Config}
+\begin{frame}[fragile,shrink=5]{Model 1 -- YOLO Training Config}
   \begin{block}{Training code}
 \begin{lstlisting}[language=Python]
-model = YOLO("yolov8s.pt")
+model = YOLO("yolov8n.pt")
 model.train(
     data="data.yaml",
-    epochs=150,
-    imgsz=1280,
-    batch=8,
-    patience=30,
-    hsv_h=0.015, hsv_s=0.7, hsv_v=0.4,
-    fliplr=0.5, mosaic=1.0, scale=0.5,
-    translate=0.1,
+    epochs=100,
+    imgsz=640,
     device=0
 )
 \end{lstlisting}
   \end{block}
   \begin{itemize}
-    \item Batch size reduced to 8 due to \texttt{imgsz=1280} VRAM requirements
+    \item The YOLO notebooks use the same simple training call for quick baseline experiments
     \item Fine-tuned from COCO pretrained weights
-    \item Trained on NVIDIA RTX 4090 (Cybele lab)
+    \item Used mainly as the fast reference model for comparison
   \end{itemize}
 \end{frame}
 
@@ -346,16 +342,16 @@ model.train(
       \vspace{0.5em}
       \textbf{FPN backbone:} Extracts features at multiple scales simultaneously -- important for poles at different distances
       \vspace{0.5em}
-      \textbf{Key difference from YOLO:} Two passes = slower but theoretically more accurate on small objects
+      \textbf{Key difference from YOLO:} Two passes = slower, but better suited to careful localisation of thin objects
     \end{column}
     \begin{column}{0.42\textwidth}
       \begin{block}{Architecture}
         \begin{itemize}
-          \item Backbone: ResNet-50 + FPN
+          \item Backbone family: pretrained Faster R-CNN + FPN
           \item Pretrained: COCO
           \item Head: replaced for 2 classes (background + pole)
-          \item Optimiser: SGD, lr=0.005
-          \item Scheduler: StepLR
+          \item Optimiser: AdamW
+          \item Scheduler: CosineAnnealingLR
           \item Epochs: 100
         \end{itemize}
       \end{block}
@@ -397,19 +393,19 @@ train_transform = T.Compose([
     \renewcommand{\arraystretch}{1.4}
     \begin{tabular}{lcccc}
       \toprule
-      \textbf{Model} & \textbf{Precision} & \textbf{Recall} & \textbf{mAP@50} & \textbf{mAP@0.5:0.95} \\
+      \textbf{Dataset} & \textbf{Precision} & \textbf{Recall} & \textbf{mAP@50} & \textbf{mAP@0.5:0.95} \\
       \midrule
-      YOLOv8s        & 0.957 & 0.976 & \textbf{0.990} & \textbf{0.788} \\
-      Faster R-CNN   & 0.626 & 0.679 & 0.993 & 0.626 \\
+      Road\_poles\_iPhone & \textbf{0.7796} & \textbf{0.8097} & \textbf{0.9859} & \textbf{0.7796} \\
+      roadpoles\_v1      & 0.6701 & 0.7124 & 0.9850 & 0.6701 \\
       \bottomrule
     \end{tabular}
-    \caption{Validation set results on respective datasets}
+    \caption{Faster R-CNN validation results on both datasets}
   \end{table}
   \vspace{0.5em}
   \begin{itemize}
-    \item Both models achieve \textbf{mAP@50 $>$ 0.99} -- poles are reliably detected
-    \item YOLO significantly better on \textbf{mAP@0.5:0.95} (0.788 vs 0.626)
-    \item Faster R-CNN higher Precision but lower Recall
+    \item The strongest completed validation runs in the notebooks are the Faster R-CNN runs
+    \item Performance is clearly higher on \texttt{Road\_poles\_iPhone} than on \texttt{roadpoles\_v1}
+    \item This matches the EDA, where \texttt{roadpoles\_v1} appeared smaller, thinner, and harder
   \end{itemize}
 \end{frame}
 
@@ -419,7 +415,7 @@ train_transform = T.Compose([
     \begin{column}{0.48\textwidth}
       \begin{block}{Road poles iPhone leaderboard}
         \begin{itemize}
-          \item Submitted YOLOv8s predictions
+          \item Submitted Faster R-CNN predictions
           \item Score: \textbf{$\approx$69\%}
         \end{itemize}
       \end{block}
@@ -434,21 +430,22 @@ train_transform = T.Compose([
     \end{column}
   \end{columns}
   \vspace{1em}
-  \textbf{Note:} Test set scores lower than validation -- expected due to unseen weather/lighting conditions in test set
+  \textbf{Note:} Hidden test scores are lower than validation -- expected due to unseen weather and lighting conditions
 \end{frame}
 
 % -------------------------------------------------------
-\begin{frame}{Results -- mAP@50 vs mAP@0.5:0.95 Gap}
+\begin{frame}{Results -- Same Model, Two Datasets}
   \begin{columns}
     \begin{column}{0.55\textwidth}
-      The gap between the two metrics tells us how \textbf{precisely the boxes fit} the poles:
+      Using the same model family on both datasets makes the dataset difficulty easier to interpret:
       \vspace{0.5em}
       \begin{itemize}
-        \item \textbf{mAP@50:} Box needs to overlap ground truth by $\geq$50\% -- both models pass easily
-        \item \textbf{mAP@0.5:0.95:} Averaged over IoU thresholds 0.50 to 0.95 -- requires tight localisation
+        \item \textbf{mAP@50:} almost identical on both datasets, so poles are found reliably in both cases
+        \item \textbf{mAP@0.5:0.95:} noticeably higher on \texttt{Road\_poles\_iPhone}, which means tighter localisation there
+        \item The stricter metric reveals the real difficulty difference better than mAP@50 alone
       \end{itemize}
       \vspace{0.5em}
-      YOLO produces \textbf{tighter bounding boxes} -- likely due to larger training set and higher image resolution
+      This supports the EDA conclusion that \texttt{roadpoles\_v1} is the harder benchmark for thin-object localisation.
     \end{column}
     \begin{column}{0.42\textwidth}
       \begin{table}
@@ -457,14 +454,15 @@ train_transform = T.Compose([
           \toprule
           & \textbf{@50} & \textbf{@0.5:0.95} \\
           \midrule
-          YOLOv8s      & 0.990 & 0.788 \\
-          Faster R-CNN & 0.993 & 0.626 \\
+          Road\_poles\_iPhone & 0.9859 & 0.7796 \\
+          roadpoles\_v1       & 0.9850 & 0.6701 \\
           \bottomrule
         \end{tabular}
       \end{table}
       \vspace{0.5em}
-      \textcolor{darkgreen}{Gap for YOLO: 0.202}\\
-      \textcolor{red}{Gap for RCNN: 0.367}
+      \textcolor{darkgreen}{Difference in mAP@50: 0.0009}\\
+      \textcolor{red}{Difference in}\\
+      \textcolor{red}{mAP@0.5:0.95: 0.1095}
     \end{column}
   \end{columns}
 \end{frame}
@@ -473,16 +471,16 @@ train_transform = T.Compose([
 \section{Discussion}
 % =======================================================
 
-\begin{frame}{Discussion -- Why YOLO Outperformed Faster R-CNN}
+\begin{frame}{Discussion -- Why Faster R-CNN Performed Best}
   \begin{block}{Three key factors}
     \begin{enumerate}
-      \item \textbf{Dataset size:} YOLO trained on 942 images vs 322 for Faster R-CNN. More data = better generalisation, especially for small objects.
-      \item \textbf{Image resolution:} YOLO used \texttt{imgsz=1280} vs default 800 for Faster R-CNN. More pixels per pole directly improves detection.
-      \item \textbf{Augmentation:} YOLO used mosaic augmentation which creates composite training images -- effectively increases dataset diversity.
+      \item \textbf{Two-stage localisation:} proposing regions first and refining them afterwards seems to help on thin poles.
+      \item \textbf{Multi-scale features:} the FPN-based Faster R-CNN pipeline is well aligned with small and distant roadside objects.
+      \item \textbf{EDA consistency:} the same model performed better on the easier dataset and worse on the harder one, which makes the results more interpretable.
     \end{enumerate}
   \end{block}
   \vspace{0.3em}
-  \textit{Faster R-CNN is theoretically stronger on small objects due to FPN + two-stage design, but needs more data and tuning to demonstrate this advantage.}
+  \textit{In our completed runs, Faster R-CNN was the strongest validated approach on both datasets, even though it is slower than YOLO.}
 \end{frame}
 
 % -------------------------------------------------------
@@ -491,18 +489,18 @@ train_transform = T.Compose([
     \begin{column}{0.48\textwidth}
       \textbf{Current limitations:}
       \begin{itemize}
-        \item Faster R-CNN trained on smaller dataset -- unfair comparison
-        \item Test set gap suggests domain shift (weather, lighting)
-        \item Faster R-CNN too slow for real-time edge deployment as-is
+        \item \texttt{roadpoles\_v1} remains much harder than \texttt{Road\_poles\_iPhone}
+        \item Hidden test gap still suggests domain shift (weather, lighting)
+        \item Faster R-CNN is accurate, but slower for real-time edge deployment
         \item No pseudo-labelling of unlabelled RoadPoles-MSJ data
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
       \textbf{Future improvements:}
       \begin{itemize}
-        \item Increase Faster R-CNN \texttt{imgsz} to 1024/1280
+        \item Run a cleaner hyperparameter sweep for both architectures
         \item Pseudo-label RoadPoles-MSJ with best YOLO model
-        \item Try MobileNet backbone for faster inference
+        \item Try lighter Faster R-CNN backbones for faster inference
         \item Test time augmentation (TTA) for better test scores
         \item Ensemble YOLO + Faster R-CNN predictions
       \end{itemize}
@@ -515,11 +513,11 @@ train_transform = T.Compose([
 % =======================================================
 
 \begin{frame}[shrink=4]{Key Learning Points}
-  \begin{block}{1 -- Resolution matters more than model size}
-    Increasing \texttt{imgsz} from 640 to 1280 had a larger impact than switching from YOLOv8n to YOLOv8s. For tiny objects like snow poles, giving the model more pixels to work with is the single most effective improvement.
+  \begin{block}{1 -- EDA predicted the ranking between datasets}
+    The EDA suggested that \texttt{roadpoles\_v1} would be the harder benchmark because the poles are smaller and more elongated. The Faster R-CNN results later confirmed exactly that pattern.
   \end{block}
   \begin{block}{2 -- Understanding two-stage detection}
-    Implementing Faster R-CNN manually revealed how the RPN and ROI pooling work together -- a much deeper understanding than using YOLO through a high-level API. The label format conversion (YOLO normalised to absolute pixel coordinates) highlighted how different frameworks expect data.
+    Implementing Faster R-CNN manually revealed how the RPN and ROI pooling work together. The label format conversion from YOLO normalised boxes to absolute pixel coordinates highlighted how different frameworks expect data.
   \end{block}
   \begin{block}{3 -- Applied deep learning is mostly engineering}
     A significant portion of the project was path issues, yaml configuration, CUDA driver mismatches, and dataset format debugging. These are the real-world challenges in any CV deployment scenario.
@@ -573,17 +571,17 @@ train_transform = T.Compose([
     \renewcommand{\arraystretch}{1.4}
     \begin{tabular}{lcccc}
       \toprule
-      \textbf{Model} & \textbf{mAP@50} & \textbf{mAP@0.5:0.95} & \textbf{Speed} & \textbf{Edge-ready} \\
+      \textbf{Dataset} & \textbf{mAP@50} & \textbf{mAP@0.5:0.95} & \textbf{Precision} & \textbf{Recall} \\
       \midrule
-      YOLOv8s      & 0.990 & 0.788 & Fast  & \textcolor{darkgreen}{\textbf{Yes}} \\
-      Faster R-CNN & 0.993 & 0.626 & Slow  & \textcolor{red}{\textbf{No}}  \\
+      Road\_poles\_iPhone & 0.9859 & \textbf{0.7796} & \textbf{0.7796} & \textbf{0.8097} \\
+      roadpoles\_v1      & 0.9850 & 0.6701 & 0.6701 & 0.7124  \\
       \bottomrule
     \end{tabular}
   \end{table}
   \vspace{1em}
   \begin{itemize}
-    \item \textbf{Best model for deployment:} YOLOv8s -- higher mAP@0.5:0.95, real-time capable
-    \item \textbf{Biggest improvement lever:} image resolution for small object detection
+    \item \textbf{Best validated model family:} Faster R-CNN in the completed notebook runs
+    \item \textbf{Main dataset conclusion:} \texttt{Road\_poles\_iPhone} is easier than \texttt{roadpoles\_v1}, consistent with the EDA
     \item \textbf{Energy cost:} 1.8 kWh total $\approx$ 12 km in a Tesla Model Y
   \end{itemize}
 \end{frame}

@@ -44,7 +44,7 @@ This is probably the most informative EDA figure in the presentation. It compare
 
 ### Slide 9 -- Data Analysis -- Object Scale
 
-This histogram supports exactly the same conclusion. Most bounding boxes are packed very close to zero, which means that in both datasets the poles occupy only a tiny part of the image. So the task is fundamentally a small-object detection problem. Also, `roadpoles_v1` is shifted slightly toward even smaller objects, which again suggests that it is the harder of the two benchmarks. This is why later on resolution becomes such an important training choice.
+This histogram supports exactly the same conclusion. Most bounding boxes are packed very close to zero, which means that in both datasets the poles occupy only a tiny part of the image. So the task is fundamentally a small-object detection problem. Also, `roadpoles_v1` is shifted slightly toward even smaller objects, which again suggests that it is the harder of the two benchmarks.
 
 ### Slide 10 -- Data Analysis -- Spatial Distribution
 
@@ -56,53 +56,53 @@ What that means in practice is that failures are less likely to come from clutte
 
 ### Slide 22 -- Key Learning Points
 
-For us, there were three main takeaways. First, image resolution matters a lot in small-object detection, which is completely consistent with the EDA. Second, building the Faster R-CNN pipeline helped us understand two-stage detection much better in practice. And third, a lot of real deep learning work is actually engineering work: handling dataset formats, paths, YAML files, and framework-specific label conversions.
+For us, there were three main takeaways. First, the EDA was actually predictive, because it correctly suggested that `roadpoles_v1` would be harder. Second, building the Faster R-CNN pipeline helped us understand two-stage detection much better in practice. And third, a lot of real deep learning work is actually engineering work: handling dataset formats, paths, YAML files, and framework-specific label conversions.
 
 ### Slide 24 -- Summary
 
-To summarize, both models were able to detect poles very reliably at `mAP@50`, but YOLOv8s gave the best overall balance between accuracy, localisation quality, and deployment potential. So our main conclusion is that for this task, the most practical model is YOLOv8s, and the most important lever is preserving enough image resolution for very small objects.
+To summarize, the strongest validated results in our notebooks came from Faster R-CNN, and those results were clearly better on `Road_poles_iPhone` than on `roadpoles_v1`. So our main conclusion is that Faster R-CNN was the best-performing model family in this project, and that the EDA explained the difficulty difference between the two datasets quite well.
 
 ## Gustavo
 
 ### Slide 12 -- Overview -- Two Architectures
 
-To study the problem from two angles, we used two different detector families: YOLOv8s as a fast one-stage detector, and Faster R-CNN with a ResNet-50 FPN backbone as a more classical two-stage detector.
+To study the problem from two angles, we used two different detector families: YOLO as a fast single-stage baseline, and Faster R-CNN as a more classical two-stage detector. Both model families were used on both datasets.
 
-### Slide 13 -- Model 1 -- YOLOv8s Architecture
+### Slide 13 -- Model 1 -- YOLO Baseline Architecture
 
-Starting with YOLOv8s, the key motivation was speed plus enough model capacity for small objects. Since the poles are only around two percent of the image width, we wanted more capacity than the nano version. At the same time, YOLO is attractive because it processes the whole image in a single forward pass, so it is much more realistic for real-time deployment on a vehicle.
+Starting with YOLO, the idea here was to have a lightweight baseline. It is simple to train, fast to run, and naturally relevant for deployment because it processes the whole image in one forward pass.
 
-### Slide 14 -- Model 1 -- YOLOv8s Training Config
+### Slide 14 -- Model 1 -- YOLO Training Config
 
-This slide shows the training setup we used for YOLO. The main points are `150` epochs, image size `1280`, patience `30`, and several augmentations such as HSV variation, flipping, mosaic, scaling, and translation. The most important idea here is that we wanted to preserve as much useful detail as possible for these small poles.
+This slide shows the baseline YOLO setup from the notebooks. We used `yolov8n`, trained it for `100` epochs, and used image size `640`. So this part of the project was mainly there to give us a fast reference model.
 
 ### Slide 15 -- Model 2 -- Faster R-CNN Architecture
 
-For the second model, we used Faster R-CNN. This is a two-stage detector: first it proposes candidate regions, and then it classifies and refines them. We paired it with a ResNet-50 FPN backbone, which is useful because FPN represents the image at multiple scales. That is especially relevant here, since the poles can appear at very different distances from the camera.
+For the second model, we used Faster R-CNN. This is a two-stage detector: first it proposes candidate regions, and then it classifies and refines them. That is especially relevant here because the poles are thin and often far away, so careful localisation matters a lot.
 
 ### Slide 16 -- Model 2 -- Faster R-CNN Training Config
 
-One practical challenge with Faster R-CNN was data formatting. Our labels were in YOLO format, using normalized centre coordinates, but Torchvision expects absolute corner coordinates. So we had to convert every box before training. We also used training augmentations such as color jitter and horizontal flips.
+One practical challenge with Faster R-CNN was data formatting. Our labels were in YOLO format, using normalized centre coordinates, but Torchvision expects absolute corner coordinates. So we had to convert every box before training. In the notebooks, Faster R-CNN also used `AdamW`, cosine annealing, and `100` epochs.
 
 ### Slide 17 -- Results -- Validation Set Metrics
 
-According to this table, both models did very well at `mAP@50`, with values above `0.99`, so both of them can generally find the poles. The bigger difference appears in `mAP@0.5:0.95`, where YOLO reaches `0.788` and Faster R-CNN reaches `0.626`. YOLO also shows much stronger recall. So overall, YOLO gives more consistent and tighter detections.
+According to this table, the strongest completed validation results in the notebooks are the Faster R-CNN results on both datasets. The main point is that the same model performs better on `Road_poles_iPhone` than on `roadpoles_v1`. That fits the EDA very well, because the iPhone dataset looked easier from the start.
 
 ### Slide 18 -- Results -- Leaderboard
 
-On the hidden test server, the scores are lower, which is expected. YOLO got around `69%` on the `Road poles iPhone` leaderboard, while Faster R-CNN got around `66%` on the `roadpoles_v1` leaderboard. This suggests that generalization to unseen conditions is still difficult.
+On the hidden test server, the scores are lower, which is expected. Faster R-CNN was the stronger final submission on both leaderboards, with about `69%` on `Road poles iPhone` and about `66%` on `roadpoles_v1`. This suggests that generalization to unseen conditions is still difficult.
 
-### Slide 19 -- Results -- mAP@50 vs mAP@0.5:0.95 Gap
+### Slide 19 -- Results -- Same Model on Two Datasets
 
-This slide explains why the stricter metric matters. Even though both models score extremely high at `mAP@50`, YOLO keeps much more of that performance when we require tighter overlap. Faster R-CNN drops much more. So the real difference is not whether the models see the poles at all, but how precisely they localize them.
+This slide explains the dataset gap more clearly. `mAP@50` is almost the same on both datasets, so Faster R-CNN can find the poles in both. But the stricter metric drops much more on `roadpoles_v1`, which tells us that the real problem there is tight localisation.
 
-### Slide 20 -- Discussion -- Why YOLO Outperformed Faster R-CNN
+### Slide 20 -- Discussion -- Why Faster R-CNN Performed Best
 
-There are a few likely reasons for that. YOLO was trained under more favorable conditions: a larger dataset, higher image resolution, and stronger augmentation. So even though Faster R-CNN is theoretically appealing for small objects, in this project YOLO had the practical advantage.
+There are a few likely reasons for that. Faster R-CNN gives the model a proposal stage plus box refinement, which is useful for thin objects. Its multi-scale representation also fits the problem well. And finally, the results are coherent with the EDA, which makes the whole story more convincing.
 
 ### Slide 21 -- Discussion -- Limitations & Future Work
 
-This also tells us where the project could be improved. The comparison is not perfectly balanced, because Faster R-CNN was trained on the smaller dataset. We also see some domain shift on the hidden test server. So future work could include higher resolution for Faster R-CNN, pseudo-labeling with the unlabeled data, or test-time augmentation and ensembles.
+This also tells us where the project could be improved. `roadpoles_v1` is still clearly the harder dataset, and we also see domain shift on the hidden test server. So future work could include better sweeps for both models, pseudo-labeling with unlabeled data, or test-time augmentation and ensembles.
 
 ### Slide 23 -- Sustainability -- Compute Energy
 
