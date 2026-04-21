@@ -16,9 +16,10 @@
 \setbeamercolor{title}{bg=ntnu, fg=white}
 \setbeamercolor{block title}{bg=ntnu, fg=white}
 \setbeamercolor{structure}{fg=ntnu}
+\setbeamertemplate{navigation symbols}{}
 
 \lstset{
-  basicstyle=\ttfamily\footnotesize,
+  basicstyle=\ttfamily\scriptsize,
   backgroundcolor=\color{lightgray},
   frame=single,
   breaklines=true,
@@ -30,8 +31,8 @@
 % Title info
 \title{TDT4265 Mini-Project}
 \subtitle{Snow Pole Detection for Autonomous Driving}
-\author{Gustav}
-\institute{NTNU -- Computer Vision and Deep Learning}
+\author[Garzo Chumilla \and Ikukele Bomolo Mia]{Gustavo Garzo Chumilla \and Jordan Ikukele Bomolo Mia}
+\institute[NTNU]{NTNU -- Computer Vision and Deep Learning}
 \date{April 2026}
 
 % -------------------------------------------------------
@@ -42,7 +43,204 @@
 \end{frame}
 
 \begin{frame}{Outline}
-  \tableofcontents
+  \begin{block}{Presentation roadmap}
+    \begin{enumerate}
+      \item Background \& Motivation
+      \item Approach / Strategy
+      \item Data Analysis
+      \item Methods \& Models
+      \item Results
+      \item Discussion
+      \item Key Learning Points
+      \item Sustainability
+    \end{enumerate}
+  \end{block}
+\end{frame}
+
+% =======================================================
+\section{Background \& Motivation}
+% =======================================================
+
+\begin{frame}{Background \& Motivation}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.58\textwidth}
+      \small
+      \begin{itemize}
+        \item Autonomous driving systems perform well in ideal road conditions, but snowy roads remain challenging because boundaries and lane markings become hard to see.
+        \item In winter, \textbf{snow poles} provide a robust visual cue for road localisation because they remain visible even when the road surface is covered.
+        \item Our project therefore focuses on \textbf{single-class object detection} of snow poles in realistic winter driving scenes from Trondheim.
+      \end{itemize}
+      \vspace{0.5em}
+      \textbf{Main challenge:} poles are thin, visually small, and often far from the camera.
+      \vspace{0.5em}
+      
+      The final goal is not only accuracy, but also a detector that could realistically support \textbf{real-time edge deployment}.
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \begin{block}{Problem framing}
+        \small
+        \begin{itemize}
+          \item task: one-class object detection
+          \item application: winter road localisation
+          \item constraint: edge-ready, real-time inference
+          \item evaluation: Precision, Recall, mAP@50 and mAP@0.5:0.95
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Background \& Motivation -- Visual Examples}
+  \centering
+  \includegraphics[width=0.97\linewidth,height=0.82\textheight,keepaspectratio]{figures/eda/representative_training_images.png}
+\end{frame}
+
+% =======================================================
+\section{Approach / Strategy}
+% =======================================================
+
+\begin{frame}{Approach / Strategy}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.58\textwidth}
+      \begin{block}{Project strategy}
+        \small
+        \begin{itemize}
+          \item We first treated the task as a \textbf{dataset understanding problem}, not only a model training problem.
+          \item We analysed \textbf{both available leaderboards separately}: \texttt{Road\_poles\_iPhone} and \texttt{roadpoles\_v1}.
+          \item The goal of the EDA was to understand whether both datasets had similar object scale, geometry and scene structure.
+        \end{itemize}
+      \end{block}
+      \begin{alertblock}{Why this matters}
+        \small
+        The course brief explicitly asks for model development to be guided by exploratory data analysis, so this step is part of the methodology rather than a side note.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \begin{block}{Pipeline}
+        \small
+        \centering
+        \vspace{0.3em}
+        \fbox{\parbox{0.84\linewidth}{\centering
+        Problem framing\\[0.2em]
+        $\downarrow$\\[0.2em]
+        EDA on both datasets\\[0.2em]
+        $\downarrow$\\[0.2em]
+        Resolution and model selection\\[0.2em]
+        $\downarrow$\\[0.2em]
+        Training, validation and leaderboard submission}}
+        \vspace{0.3em}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Approach / Strategy -- Key Reasoning}
+  \begin{block}{What the EDA needed to answer}
+    \begin{itemize}
+      \item Are the two datasets similar enough that we should interpret them as the same task?
+      \item Is the main difficulty object density, object scale, object geometry, or scene structure?
+      \item Which data properties are most likely to explain differences in final leaderboard performance?
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{How the analysis informs the rest of the presentation}
+    \begin{itemize}
+      \item If poles are very small, input resolution becomes a critical design choice.
+      \item If one dataset is geometrically harder, lower results there do not necessarily mean the model is worse overall.
+      \item This gives context for the model and training decisions shown in the next section.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+% =======================================================
+\section{Data-analysis}
+% =======================================================
+
+\begin{frame}{Data Analysis -- Dataset Overview}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.58\textwidth}
+      \includegraphics[width=\linewidth,height=0.72\textheight,keepaspectratio]{figures/eda/dataset_sizes_by_split.png}
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \begin{block}{Key observations}
+        \small
+        \begin{itemize}
+          \item \texttt{Road\_poles\_iPhone} is the larger dataset:
+          \begin{itemize}
+            \item 942 train
+            \item 261 val
+            \item 138 test
+          \end{itemize}
+          \item \texttt{roadpoles\_v1} is smaller:
+          \begin{itemize}
+            \item 322 train
+            \item 92 val
+            \item 46 test
+          \end{itemize}
+          \item The test labels are hidden in both datasets, so the EDA must rely on train and validation splits only.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Data Analysis -- Object Geometry}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.56\textwidth}
+      \includegraphics[width=\linewidth,height=0.72\textheight,keepaspectratio]{figures/eda/object_geometry_summary.png}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \begin{block}{Why this is relevant}
+        \small
+        \begin{itemize}
+          \item \texttt{roadpoles\_v1} is the \textbf{harder benchmark geometrically}:
+          \begin{itemize}
+            \item smaller median box area
+            \item much larger height/width ratio
+          \end{itemize}
+          \item Both datasets are sparse at around \textbf{1.2 poles per image}.
+          \item The difficulty is therefore not crowded scenes, but detecting small and thin roadside objects.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Data Analysis -- Object Scale}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.58\textwidth}
+      \includegraphics[width=\linewidth,height=0.72\textheight,keepaspectratio]{figures/eda/bbox_area_distribution.png}
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \begin{block}{Interpretation}
+        \small
+        \begin{itemize}
+          \item In both datasets, poles occupy only a \textbf{tiny percentage of the image area}.
+          \item This confirms that the task is dominated by \textbf{small-object detection}.
+          \item It also helps explain why image resolution is an important variable in the methods section.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Data Analysis -- Spatial Distribution}
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.74\textheight,keepaspectratio]{figures/eda/pole_center_distribution.png}
+
+  \vspace{0.3em}
+
+  \scriptsize Pole centres cluster in a narrow horizontal band in both datasets, consistent with road-side object placement.
+\end{frame}
+
+\begin{frame}{Data Analysis -- Spatial Distribution Insights}
+  \begin{block}{Interpretation}
+    \begin{itemize}
+      \item The two datasets are not random image collections, but structured driving scenes with a clear spatial bias.
+      \item This matters when interpreting results: errors are more likely to come from \textbf{small-object visibility and localisation} than from heavy clutter.
+      \item These observations directly motivate the model and training choices shown in the next section.
+    \end{itemize}
+  \end{block}
 \end{frame}
 
 % =======================================================
@@ -112,7 +310,7 @@
 \end{frame}
 
 % -------------------------------------------------------
-\begin{frame}[fragile]{Model 1 -- YOLOv8s Training Config}
+\begin{frame}[fragile,shrink=5]{Model 1 -- YOLOv8s Training Config}
   \begin{block}{Training code}
 \begin{lstlisting}[language=Python]
 model = YOLO("yolov8s.pt")
@@ -166,7 +364,7 @@ model.train(
 \end{frame}
 
 % -------------------------------------------------------
-\begin{frame}[fragile]{Model 2 -- Faster R-CNN Training Config}
+\begin{frame}[fragile,shrink=5]{Model 2 -- Faster R-CNN Training Config}
   \begin{block}{Custom dataset class -- YOLO labels to Faster R-CNN format}
 \begin{lstlisting}[language=Python]
 # Convert normalised YOLO format to absolute pixel coords
@@ -316,7 +514,7 @@ train_transform = T.Compose([
 \section{Key Learning Points}
 % =======================================================
 
-\begin{frame}{Key Learning Points}
+\begin{frame}[shrink=4]{Key Learning Points}
   \begin{block}{1 -- Resolution matters more than model size}
     Increasing \texttt{imgsz} from 640 to 1280 had a larger impact than switching from YOLOv8n to YOLOv8s. For tiny objects like snow poles, giving the model more pixels to work with is the single most effective improvement.
   \end{block}
@@ -388,9 +586,13 @@ train_transform = T.Compose([
     \item \textbf{Biggest improvement lever:} image resolution for small object detection
     \item \textbf{Energy cost:} 1.8 kWh total $\approx$ 12 km in a Tesla Model Y
   \end{itemize}
-  \vspace{0.5em}
-  \centering
-  \textit{Thank you!}
+\end{frame}
+
+\begin{frame}[plain]
+  \vspace*{0.32\paperheight}
+  \begin{center}
+    {\color{ntnu}\Huge \textbf{Thank you for listening}}
+  \end{center}
 \end{frame}
 
 \end{document}

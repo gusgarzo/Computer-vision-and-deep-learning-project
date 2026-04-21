@@ -1,0 +1,22 @@
+{
+  "Road_poles_iPhone": {
+    "train_images": 942,
+    "val_images": 261,
+    "median_area_pct": 0.07783390439999999,
+    "mean_boxes_per_image": 1.2409766454352442,
+    "mean_aspect_ratio": 4.279673016454869
+  },
+  "roadpoles_v1": {
+    "train_images": 322,
+    "val_images": 92,
+    "median_area_pct": 0.060920462999999994,
+    "mean_boxes_per_image": 1.2173913043478262,
+    "mean_aspect_ratio": 16.32217172662317
+  },
+  "takeaways": [
+    "Both datasets are sparse, so the problem is dominated by small-object visibility rather than crowding.",
+    "roadpoles_v1 is the geometrically harder benchmark because poles are thinner and more elongated.",
+    "Road_poles_iPhone is larger, which helps explain why it is easier to train and validate stable models on it.",
+    "These differences justify treating the two leaderboards separately when discussing results."
+  ]
+}
